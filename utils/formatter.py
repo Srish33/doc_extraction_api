@@ -280,23 +280,34 @@ def _extract_sections(lines):
     current = None
 
     for line in lines:
+
         normalized = line.rstrip(":").lower()
-        is_header = normalized in SECTION_HEADERS or (
-            len(line) <= 45 and line.isupper() and not MONEY_PATTERN.search(line)
+
+        is_header = (
+            normalized in SECTION_HEADERS
+            or (
+                line.isupper()
+                and len(line.split()) <= 4
+                and len(line) <= 30
+            )
         )
 
         if is_header:
             if current:
                 sections.append(current)
-            current = {"heading": line.rstrip(":"), "content": []}
+
+            current = {
+                "heading": line.rstrip(":"),
+                "content": []
+            }
+
         elif current:
             current["content"].append(line)
 
     if current:
         sections.append(current)
 
-    return [section for section in sections if section["content"]]
-
+    return [s for s in sections if s["content"]]
 
 def _extract_table_like_rows(lines):
     rows = []
@@ -695,20 +706,27 @@ def _format_section_preview(content):
     return formatted if formatted else content
 
 def _important_sections(sections):
-    important = []
+    result = []
 
     for section in sections:
-        if not section.get("content"):
+
+        content = [
+            line.strip()
+            for line in section.get("content", [])
+            if line.strip()
+        ]
+
+        if not content:
             continue
 
-        important.append(
+        result.append(
             {
-                "heading": section.get("heading"),
-                "content": _format_section_preview(section.get("content", []))
+                "heading": section["heading"],
+                "content": _format_section_preview(content)
             }
         )
 
-    return important
+    return result
 
 def _important_details(details):
     important = {}
