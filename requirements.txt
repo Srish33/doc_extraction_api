@@ -1,7 +1,7 @@
 fastapi
 uvicorn
-python-multipart
-PyMuPDF
+pymupdf
 pytesseract
 pdf2image
-pillow
+opencv-python
+numpy

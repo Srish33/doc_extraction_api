@@ -51,6 +51,7 @@ On Windows, if OCR fails, check that both tools can be run from a terminal.
 uvicorn main:app --reload
 ```
 
+
 Open Swagger UI:
 
 ```text

@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Core Document Intelligence</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: monospace;
+        }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen p-6 max-w-3xl mx-auto flex flex-col gap-6">
+
+    <div class="text-center">
+        <p class="text-slate-500">----------------------------------------------------------------------------------------------------</p>
+        <h1 class="text-lg font-bold tracking-widest uppercase py-1 text-indigo-400">CORE DOCUMENT INTELLIGENCE</h1>
+        <p class="text-slate-500">----------------------------------------------------------------------------------------------------</p>
+    </div>
+
+    <!-- Upload Controls -->
+    <div class="flex flex-col items-center gap-4">
+        <input type="file" id="fileInput" class="hidden" accept=".pdf,.png,.jpg,.jpeg">
+
+        <div id="dropZone" class="w-full border border-slate-800 bg-slate-900/40 rounded-xl p-5 text-center cursor-pointer select-none">
+            <div class="text-sm font-bold text-slate-300">Drop PDF/image here</div>
+            <div class="text-xs text-slate-500 mt-1">or click to choose. OCR runs when native text is empty.</div>
+        </div>
+
+        <div class="flex flex-col sm:flex-row items-center gap-3 w-full">
+            <button id="chooseBtn" class="px-6 py-2 bg-slate-900 border border-slate-700 rounded text-sm hover:bg-slate-800 transition-colors font-bold text-slate-200">
+                [ Choose File ]
+            </button>
+
+            <div class="flex-1 text-left">
+                <p id="fileNameDisp" class="text-sm font-bold text-slate-400 italic">No document selected</p>
+            </div>
+        </div>
+
+        <button id="processBtn" disabled class="w-full px-6 py-2 bg-indigo-950 border border-indigo-700 disabled:border-slate-800 disabled:bg-slate-900/50 text-indigo-300 disabled:text-slate-600 rounded text-sm font-bold hover:bg-indigo-900 transition-colors">
+            [ Extract Information ]
+        </button>
+
+        <div id="loader" class="hidden w-full flex flex-col items-center gap-2 py-2">
+            <div class="h-5 w-5 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
+            <p class="text-xs text-slate-500">Executing pipeline array sweeps...</p>
+        </div>
+
+        <div id="errorPanel" class="hidden w-full border border-red-900 bg-red-950/30 rounded-xl p-4">
+            <div class="text-xs uppercase tracking-wider font-bold text-red-300">Error</div>
+            <pre id="errorText" class="mt-2 text-xs text-red-200 whitespace-pre-wrap break-words"></pre>
+        </div>
+    </div>
+
+    <!-- Output Panel -->
+    <div id="outputPanel" class="hidden flex flex-col gap-6">
+        <div>
+            <p class="text-slate-500">----------------------------------------------------</p>
+            <h2 class="text-xs uppercase font-bold tracking-wider text-slate-400 py-1">DOCUMENT DETAILS</h2>
+            <p class="text-slate-500">----------------------------------------------------</p>
+            <div class="mt-2 pl-2">
+                <p class="text-xs text-slate-500">Document Type:</p>
+                <p id="outDocType" class="text-sm font-bold text-indigo-400 mt-0.5">Unknown</p>
+            </div>
+        </div>
+
+        <div>
+            <p class="text-slate-500">----------------------------------------------------</p>
+            <h2 class="text-xs uppercase font-bold tracking-wider text-slate-400 py-1">EMAILS</h2>
+            <p class="text-slate-500">----------------------------------------------------</p>
+            <div id="outEmails" class="mt-2 pl-2 text-sm font-bold text-slate-300 flex flex-col gap-1">
+                None Found
+            </div>
+        </div>
+
+        <div>
+            <p class="text-slate-500">----------------------------------------------------</p>
+            <h2 class="text-xs uppercase font-bold tracking-wider text-slate-400 py-1">PHONE NUMBERS</h2>
+            <p class="text-slate-500">----------------------------------------------------</p>
+            <div id="outPhones" class="mt-2 pl-2 text-sm font-bold text-slate-300 flex flex-col gap-1">
+                None Found
+            </div>
+        </div>
+
+        <div>
+            <p class="text-slate-500">----------------------------------------------------</p>
+            <h2 class="text-xs uppercase font-bold tracking-wider text-slate-400 py-1">PERCENTAGES</h2>
+            <p class="text-slate-500">----------------------------------------------------</p>
+            <div id="outPercentages" class="mt-2 pl-2 text-sm font-bold text-slate-300 flex flex-col gap-1">
+                None Found
+            </div>
+        </div>
+
+        <div>
+            <p class="text-slate-500">----------------------------------------------------</p>
+            <h2 class="text-xs uppercase font-bold tracking-wider text-slate-400 py-1">RAW JSON</h2>
+            <p class="text-slate-500">----------------------------------------------------</p>
+            <pre id="outJsonBlock" class="mt-2 p-3 bg-slate-900/60 border border-slate-800 rounded text-xs font-mono text-cyan-400 overflow-x-auto whitespace-pre-wrap max-h-[400px]"></pre>
+        </div>
+    </div>
+
+    <script>
+        const chooseBtn = document.getElementById('chooseBtn');
+        const dropZone = document.getElementById('dropZone');
+        const fileInput = document.getElementById('fileInput');
+        const fileNameDisp = document.getElementById('fileNameDisp');
+        const processBtn = document.getElementById('processBtn');
+        const loader = document.getElementById('loader');
+        const outputPanel = document.getElementById('outputPanel');
+        const errorPanel = document.getElementById('errorPanel');
+        const errorText = document.getElementById('errorText');
+
+        let targetFileObject = null;
+
+        function showError(message) {
+            errorText.textContent = String(message ?? 'Unknown error');
+            errorPanel.classList.remove('hidden');
+        }
+
+        function clearError() {
+            errorPanel.classList.add('hidden');
+            errorText.textContent = '';
+        }
+
+        function normalizeEmpty(value) {
+            if (value === null || value === undefined) return null;
+            if (typeof value === 'string') {
+                const v = value.trim().toLowerCase();
+                if (!v || v === 'none found' || v === 'not found') return null;
+            }
+            if (Array.isArray(value) && value.length === 0) return null;
+            return value;
+        }
+
+        function renderListElement(elementId, datasetValues) {
+            const container = document.getElementById(elementId);
+            container.innerHTML = '';
+
+            const normalized = normalizeEmpty(datasetValues);
+            if (normalized === null) {
+                container.textContent = 'None Found';
+                return;
+            }
+
+            if (Array.isArray(normalized)) {
+                if (normalized.length === 0) {
+                    container.textContent = 'None Found';
+                    return;
+                }
+                normalized.forEach(val => {
+                    const line = document.createElement('p');
+                    line.textContent = String(val);
+                    container.appendChild(line);
+                });
+                return;
+            }
+
+            // backend sometimes returns strings
+            container.textContent = String(normalized);
+        }
+
+        function setJsonPayload(payload) {
+            document.getElementById('outJsonBlock').textContent = JSON.stringify(payload, null, 4);
+        }
+
+        function renderLayoutMetrics(payload) {
+            const docType = payload?.document_type || 'General Document';
+            const extracted = payload?.extracted_data || {};
+
+            document.getElementById('outDocType').textContent =
+                docType.charAt(0).toUpperCase() + docType.slice(1);
+
+            renderListElement('outEmails', extracted.emails);
+            renderListElement('outPhones', extracted.phone_numbers);
+
+            // Backend key is percentages_detected, but keep compatibility with any other key
+            const percentages =
+                extracted.percentages_detected ??
+                extracted.percentages ??
+                extracted.percentages_detected_list ??
+                null;
+            renderListElement('outPercentages', percentages);
+
+            setJsonPayload(payload);
+            outputPanel.classList.remove('hidden');
+        }
+
+        function setLoading(isLoading) {
+            loader.classList.toggle('hidden', !isLoading);
+            processBtn.disabled = isLoading || !targetFileObject;
+            outputPanel.classList.toggle('hidden', isLoading);
+        }
+
+        function setSelectedFile(file) {
+            targetFileObject = file;
+            fileNameDisp.textContent = file ? file.name : 'No document selected';
+            clearError();
+            processBtn.disabled = !file;
+            outputPanel.classList.add('hidden');
+        }
+
+        // click to choose
+        chooseBtn.addEventListener('click', () => fileInput.click());
+
+        // file selection
+        fileInput.addEventListener('change', (event) => {
+            const file = event.target.files?.[0];
+            if (!file) return;
+            setSelectedFile(file);
+        });
+
+        // drag/drop
+        const highlight = () => dropZone.classList.add('ring-2', 'ring-indigo-500');
+        const unhighlight = () => dropZone.classList.remove('ring-2', 'ring-indigo-500');
+
+        dropZone.addEventListener('click', () => fileInput.click());
+
+        dropZone.addEventListener('dragenter', (e) => { e.preventDefault(); highlight(); });
+        dropZone.addEventListener('dragover', (e) => { e.preventDefault(); highlight(); });
+        dropZone.addEventListener('dragleave', (e) => { e.preventDefault(); unhighlight(); });
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            unhighlight();
+
+            const file = e.dataTransfer?.files?.[0];
+            if (!file) return;
+            setSelectedFile(file);
+        });
+
+        // process pipeline
+        processBtn.addEventListener('click', async () => {
+            if (!targetFileObject) return;
+            clearError();
+            setLoading(true);
+
+            try {
+                const rawBufferBytes = await targetFileObject.arrayBuffer();
+
+                const response = await fetch('http://127.0.0.1:8000/upload/raw-bytes', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/octet-stream' },
+                    body: rawBufferBytes
+                });
+
+                let jsonPayload;
+                try {
+                    jsonPayload = await response.json();
+                } catch {
+                    const text = await response.text().catch(() => '');
+                    throw new Error(`Server did not return JSON. HTTP ${response.status}${text ? `: ${text}` : ''}`);
+                }
+
+                if (!response.ok) {
+                    const detail = jsonPayload?.detail || jsonPayload?.message || response.statusText;
+                    throw new Error(`Extraction failed (HTTP ${response.status}): ${detail}`);
+                }
+
+                renderLayoutMetrics(jsonPayload);
+
+            } catch (err) {
+                console.error('[Ingestion Dashboard Error Log]', err);
+                showError(err?.message || String(err));
+            } finally {
+                setLoading(false);
+            }
+        });
+
+        // initial defaults
+        renderListElement('outEmails', null);
+        renderListElement('outPhones', null);
+        renderListElement('outPercentages', null);
+        setJsonPayload({ info: 'Upload a document to extract information.' });
+    </script>
+</body>
+</html>
+
