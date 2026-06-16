@@ -31,6 +31,7 @@ project_root/
     |-- ocr.py
     |-- parser.py
     `-- formatter.py
+```
 
 ## Setup
 
