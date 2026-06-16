@@ -1,742 +1,224 @@
 import re
+from typing import Any, Dict, List, Optional
 
-# Module-level patterns used across the formatter to detect common entities.
-MONEY_PATTERN = re.compile(
-    r"(?:Rs\.?|INR|USD|EUR|GBP|\$|€|£)\s?\d[\d,]*(?:\.\d{1,2})?",
-    re.IGNORECASE,
-)
 EMAIL_PATTERN = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
 
-# OPTIMIZED: Captures standard grouped formats, spaced layouts, and prefix numbers (+91) smoothly
 PHONE_PATTERN = re.compile(
-    r"(?:\+91[\s.-]?)?(?:\(\d{3}\)|\d{3})[\s.-]?\d{3}[\s.-]?\d{4}\b|"
-    r"(?:\+91[\s.-]?)?[6-9]\d{4}[\s.-]?\d{5}\b|"
-    r"(?:\+91[\s.-]?)?[6-9]\d{9}\b"
+    r"(?:\+?\d{1,3}[\s.-]?)?\(?\d{2,4}\)?[\s.-]?\d{2,4}[\s.-]?\d{3,4}[\s.-]?\d{3,4}\b"
 )
 
 DATE_PATTERN = re.compile(
-    r"\b(?:\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|"
-    r"\d{4}[/-]\d{1,2}[/-]\d{1,2}|"
-    r"(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*"
-    r"\s+\d{1,2},?\s+\d{4}|"
-    r"\d{1,2}\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*"
-    r"\s+\d{4})\b",
-    re.IGNORECASE,
+    r"\b(?:\d{1,2}(?:st|nd|rd|th)?\s+(?:Week|Month|Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*|\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|\d{4}[/-]\d{1,2}[/-]\d{1,2})\b"
+    r"|(?:\d{1,2}(?:st|nd|rd|th)?\s+(?:January|February|March|April|May|June|July|August|September|October|November|December))"
+    r"|(?:\d{1,2}[.]\d{1,2}[.]\d{2,4})",
+    re.IGNORECASE
 )
-
+MONEY_PATTERN = re.compile(r"(?:Rs\.?|INR|USD|EUR|GBP|\$|€|£)\s?\d[\d,]*(?:\.\d{1,2})?", re.IGNORECASE)
 PERCENT_PATTERN = re.compile(r"\b\d{1,3}(?:\.\d{1,2})?\s*%\b")
 
-DOCUMENT_KEYWORDS = {
-    "Receipt": ["receipt", "amount paid", "payment method", "date paid"],
-    "Invoice": ["invoice number", "tax invoice", "bill to", "due date", "balance due", "total amount"],
-    "Resume": ["resume", "curriculum vitae", "experience", "education", "skills", "extracurriculars"],
-    "Bank Statement": ["statement", "account number", "opening balance", "closing balance"],
-    "Report": ["report", "abstract", "introduction", "conclusion", "findings"],
-    "Agreement": ["agreement", "contract", "terms and conditions", "party", "signature"],
-    "Certificate": ["certificate of", "certifies that", "awarded", "issued", "examination", "marksheet", "grade points",
-                    "sgpa", "cgpa", "identity card", "roll no"],
-    "Letter": ["dear", "subject", "sincerely", "regards"],
-    "MSDS": ["material safety data sheet", "msds", "hazards identification", "first-aid measures", "chemical product"],
-    "Assay Certificate": ["assay certificate", "chemical analysis", "spectro", "grade", "al2o3", "fe2o3", "sio2",
-                          "moisture %"],
-    "Purchase Order": ["purchase order", "po number", "delivery terms", "vendor code", "indentor"],
-}
-
-SECTION_HEADERS = {
-    "abstract", "account details", "agreement", "amount", "bill from", "bill to",
-    "certificate", "conclusion", "contact", "customer", "date", "description",
-    "education", "experience", "findings", "invoice", "item", "payment",
-    "receipt", "report", "seller", "ship to", "skills", "summary", "sub total",
-    "subtotal", "tax", "terms", "total", "projects", "certificates", "extracurriculars",
-    "composition", "hazards identification", "first-aid measures", "fire fighting",
-    "handling and storage", "physical and chemical properties", "stability and reactivity",
-    "chemical analysis", "test results", "specifications", "delivery terms"
-}
-
-TABLE_HEADER_LABELS = {
-    "amount", "balance", "credit", "date", "debit", "description", "discount",
-    "item", "particulars", "price", "qty", "quantity", "rate", "total",
-    "unit cost", "unit price"
+DOCUMENT_CLASSIFIER_MAP = {
+    "Resume": ["EXPERIENCE", "EDUCATION", "SKILLS", "PROJECTS", "AWARDS", "CERTIFICATIONS", "PUBLICATIONS", "SUMMARY"],
+    "Invoice": ["INVOICE #", "BILL TO", "SHIP TO", "INVOICE DATE", "DUE DATE", "TOTAL DUE", "SUBTOTAL", "BALANCE DUE",
+                "DESCRIPTION", "QUANTITY", "UNIT PRICE"],
+    "Receipt": ["CASHIER", "ITEMS", "SUBTOTAL", "TAX", "TOTAL", "CHANGE", "STORE #", "AUTH CODE", "VISA", "MASTERCARD"],
+    "Calendar": ["SCHEDULE", "AGENDA", "MEETING", "TIMETABLE", "APPOINTMENT", "CALENDAR", "REMINDER", "EVENTS"],
+    "Certificate": ["MARKSHEET", "TRANSCRIPT", "GRADE", "ROLL NO", "REGISTRATION NO", "PASSED",
+                    "PROVISIONAL CERTIFICATE", "CONTROLLER OF EXAMINATIONS"]
 }
 
 
-def _lines(text):
-    return [line.strip() for line in text.splitlines() if line.strip()]
+
+def universal_de_space_text(text: str) -> str:
+    """Scans strings to fix exploded capital lettering layouts (e.g.
+
+    E X P E R I E N C E) without corrupting digit spaces.
+    """
+
+    def collapse_match(match):
+        return match.group(0).replace(" ", "")
+
+    return re.sub(r'\b[A-Z]\s+[A-Z]\s+[A-Z]\s+[A-Z](?:\s+[A-Z])*\b', collapse_match, text)
 
 
-def _unique(values):
+def universal_split_lines(text: str) -> List[str]:
+    """Slices structural plain-text blocks into independent list array sentences
+
+    using weighted classification anchor mapping points.
+    """
+    all_anchors = []
+    for keywords in DOCUMENT_CLASSIFIER_MAP.values():
+        all_anchors.extend(keywords)
+
+    repaired = text
+    for anchor in sorted(set(all_anchors), key=len, reverse=True):
+        repaired = re.sub(rf'(?i)\b({re.escape(anchor)})\b', r'\n\1\n', repaired)
+
+    return [line.strip() for line in repaired.split('\n') if line.strip()]
+
+
+def _normalize_line(line: str) -> str:
+    """Cleans up trailing plain-text punctuation layouts without deleting vital
+
+    trailing digits or numerical data strings.
+    """
+    line = re.sub(r'[°•°.,\s\-—–]+$', '', line)
+    return re.sub(r'\s+', ' ', line).strip()
+
+
+def _unique(items: List[Any]) -> List[Any]:
+    """Helper macro to safely drop duplicates while keeping layout order intact."""
     seen = set()
-    result = []
-    for value in values:
-        key = value.lower()
-        if key not in seen:
-            seen.add(key)
-            result.append(value)
-    return result
+    return [x for x in items if not (x in seen or seen.add(x))]
 
 
-def _remove_null_values(value):
-    if value is None:
-        return "Not found"
-    if isinstance(value, dict):
-        return {key: _remove_null_values(item) for key, item in value.items()}
-    if isinstance(value, list):
-        return [_remove_null_values(item) for item in value]
-    return value
+def _remove_null_values(data: Any) -> Any:
+    """Recursively walks downstream response JSON nodes to prune empty fields."""
+    if isinstance(data, dict):
+        return {k: _remove_null_values(v) for k, v in data.items() if v not in [None, "", [], {}]}
+    elif isinstance(data, list):
+        return [_remove_null_values(x) for x in data if x not in [None, "", [], {}]]
+    return data
 
 
-def _find_label_index(lines, labels):
-    lowered_labels = {label.lower() for label in labels}
-    for index, line in enumerate(lines):
-        normalized = line.rstrip(":").lower()
-        if normalized in lowered_labels:
-            return index
-    return -1
 
+def parse_generic_sections(lines: List[str]) -> List[Dict[str, Any]]:
+    """Scans document lines, groups text cleanly under respective headings,
 
-def _value_after_label(lines, labels):
-    label_index = _find_label_index(lines, labels)
-    if label_index == -1:
-        return None
-
-    current_line = lines[label_index]
-    if ":" in current_line:
-        _, value = current_line.split(":", 1)
-        value = value.strip()
-        if value:
-            return value
-
-    if label_index + 1 < len(lines):
-        return lines[label_index + 1]
-    return None
-
-
-def _money_after_label(lines, labels):
-    label_index = _find_label_index(lines, labels)
-    if label_index == -1:
-        return None
-
-    for line in lines[label_index + 1: label_index + 4]:
-        match = MONEY_PATTERN.search(line)
-        if match:
-            return match.group(0)
-    return None
-
-
-def _section(lines, start_labels, end_labels):
-    start_index = _find_label_index(lines, start_labels)
-    if start_index == -1:
-        return []
-
-    lowered_end_labels = {label.lower() for label in end_labels}
-    end_index = len(lines)
-    for index in range(start_index + 1, len(lines)):
-        if lines[index].rstrip(":").lower() in lowered_end_labels:
-            end_index = index
-            break
-
-    return lines[start_index + 1: end_index]
-
-
-def _contact_details(section_lines):
-    if not section_lines:
-        return {
-            "name": None,
-            "address": [],
-            "phone": None,
-            "email": None,
-            "other_details": [],
-        }
-
-    email = None
-    phone = None
-    address = []
-    other_details = []
-
-    metadata_blacklist = {"date:", "ship mode:", "balance due:", "order id:", "invoice", "notes:", "thanks",
-                          "po number:"}
-
-    for line in section_lines[1:]:
-        cleaned_line = line.replace('"', '').strip()
-        lowered_line = cleaned_line.lower()
-
-        if any(term in lowered_line for term in metadata_blacklist):
-            continue
-
-        email_match = EMAIL_PATTERN.search(cleaned_line)
-        phone_match = PHONE_PATTERN.search(cleaned_line)
-
-        if email_match and not email:
-            email = email_match.group(0)
-        elif phone_match and not phone:
-            phone = phone_match.group(0)
-        elif cleaned_line.replace(" ", "").isdigit():
-            other_details.append(cleaned_line)
-        elif not MONEY_PATTERN.search(cleaned_line):
-            if cleaned_line.lower() not in {"ship to:", "bill to:", "vendor:"}:
-                address.append(cleaned_line)
-        else:
-            other_details.append(cleaned_line)
-
-    return {
-        "name": section_lines[0].replace('"', '').strip(),
-        "address": address,
-        "phone": phone,
-        "email": email,
-        "other_details": other_details,
-    }
-
-
-def _detect_document_type(text):
-    lowered_text = text.lower()
-
-    # Priority check for Resumes to lock down type matching accuracy
-    if any(kw in lowered_text for kw in ["github.com", "linkedin.com", "bloc", "riverpod", "coursework", "b.tech"]):
-        return "Resume"
-    if any(kw in lowered_text for kw in ["marksheet", "semester", "identity card", "roll no", "grade points"]):
-        return "Certificate"
-
-    scores = {}
-    for document_type, keywords in DOCUMENT_KEYWORDS.items():
-        scores[document_type] = sum(1 for keyword in keywords if keyword in lowered_text)
-
-    best_type = max(scores, key=scores.get)
-    if scores[best_type] == 0:
-        return "General Document"
-    return best_type
-
-
-def _extract_title(lines):
-    for line in lines[:8]:
-        if len(line) <= 120 and not EMAIL_PATTERN.search(line) and not PHONE_PATTERN.search(line):
-            return line
-    return lines[0] if lines else None
-
-
-def _extract_key_value_fields(lines):
-    fields = {}
-    for index, line in enumerate(lines):
-        key = None
-        value = None
-
-        if len([column for column in re.split(r"\s{2,}|\t+|\s+\|\s+", line) if column.strip()]) >= 2:
-            continue
-
-        if ":" in line:
-            key, value = line.split(":", 1)
-        elif index + 1 < len(lines):
-            normalized = line.rstrip(":").lower()
-            next_line = lines[index + 1]
-            is_label = re.search(r"(number|no|date|name|method|total|amount|id|code)$", normalized)
-            is_table_header = normalized in {"amount", "price", "quantity", "qty", "unit cost", "unit price"}
-            if is_label and not is_table_header:
-                key = line
-                value = next_line
-
-        if not key or not value:
-            continue
-
-        key = re.sub(r"\s+", " ", key).strip(" :-")
-        value = value.strip()
-        if 1 <= len(key) <= 60 and value:
-            fields[key] = value
-
-    return fields
-
-
-def _extract_identifiers(lines):
-    identifiers = {}
-    patterns = {
-        "invoice_number": ["Invoice Number", "Invoice No", "Invoice #"],
-        "receipt_number": ["Receipt Number", "Receipt No", "Receipt #"],
-        "reference_number": ["Reference Number", "Reference No", "Ref No", "Ref #"],
-        "account_number": ["Account Number", "Account No", "A/C No"],
-        "order_number": ["Order Number", "Order No", "Order #", "Purchase Order", "PO Number", "PO No"],
-        "customer_id": ["Customer ID", "Customer No", "Client ID", "Vendor Code"],
-    }
-    for name, labels in patterns.items():
-        identifiers[name] = _value_after_label(lines, labels)
-    return identifiers
-
-
-def _extract_contact_blocks(lines):
-    contacts = []
-    labels = ["Bill To", "Billed To", "Ship To", "From", "To", "Customer", "Seller", "Vendor"]
-    end_labels = list(SECTION_HEADERS)
-
-    for label in labels:
-        section_lines = _section(lines, [label], end_labels)
-        if section_lines:
-            contacts.append({"label": label, "details": _contact_details(section_lines)})
-
-    return contacts
-
-
-def _extract_sections(lines):
+    isolates bullet points into arrays, and strips out multi-page text repetition loops.
+    """
     sections = []
-    current = None
+    current_heading = "GENERAL OVERVIEW"
+    current_text_buffer = []
 
-    table_noise_words = {"secured", "subject", "full", "marks", "code", "sl", "no"}
-    protected_resume_headers = {"summary", "education", "experience", "projects", "skills", "certificates",
-                                "extracurriculars"}
-
-    for index, line in enumerate(lines):
-        normalized = line.rstrip(":").lower().strip()
-
-        is_header = (
-                normalized in SECTION_HEADERS
-                or normalized in protected_resume_headers
-                or (
-                        line.isupper()
-                        and 4 <= len(line) <= 40
-                        and len(line.split()) <= 4
-                        and not any(char.isdigit() for char in line)
-                )
-        )
-
-        if is_header and normalized not in protected_resume_headers:
-            if normalized in table_noise_words or any(w in table_noise_words for w in normalized.split()):
-                lookahead_lines = lines[index + 1: index + 4] if index + 1 < len(lines) else []
-                if any(re.search(r"\b\d{2,3}\b", l) for l in lookahead_lines):
-                    is_header = False
-
-            if index > 0 and re.search(r"\b\d{2,3}\b", lines[index - 1]):
-                is_header = False
-
-        if is_header:
-            if current:
-                sections.append(current)
-            current = {"heading": line.rstrip(":").strip(), "content": []}
-        elif current:
-            current["content"].append(line)
-
-    if current:
-        sections.append(current)
-
-    return [s for s in sections if s["content"]]
-
-
-def _extract_table_like_rows(lines):
-    rows = []
-    for line in lines:
-        columns = re.split(r"\s{2,}|\t+|\s+\|\s+", line)
-        columns = [column.strip() for column in columns if column.strip()]
-        if len(columns) >= 2:
-            rows.append(columns)
-    return rows
-
-
-def _extract_phone_numbers(text):
-    phones = []
-    for match in PHONE_PATTERN.finditer(text):
-        phone = match.group(0).strip()
-        digit_count = len(re.findall(r"\d", phone))
-        if digit_count >= 8:
-            phones.append(phone)
-    return _unique(phones)
-
-
-def _build_table_description(headers, rows):
-    if not headers or not rows:
-        return "No data found in table."
-
-    descriptions = []
-    clean_headers = [h.strip().replace("_", " ").title() for h in headers]
-    is_standard_financial_table = all(h in clean_headers for h in ["Description", "Unit Cost", "Quantity", "Amount"])
-
-    for idx, row in enumerate(rows, start=1):
-        working_row = list(row)
-
-        if is_standard_financial_table and len(working_row) >= 4:
-            uc_idx = clean_headers.index("Unit Cost")
-            qty_idx = clean_headers.index("Quantity")
-
-            unit_cost_val = working_row[uc_idx]
-            quantity_val = working_row[qty_idx]
-
-            has_currency_in_qty = bool(MONEY_PATTERN.search(quantity_val))
-
-            if has_currency_in_qty:
-                working_row[uc_idx], working_row[qty_idx] = working_row[qty_idx], working_row[uc_idx]
-
-        row_parts = []
-        for i, header in enumerate(clean_headers):
-            val = working_row[i] if i < len(working_row) else "Not Specified"
-            row_parts.append(f"{header}: '{val}'")
-
-        descriptions.append(f"Row {idx} -> {', '.join(row_parts)}")
-
-    return " | ".join(descriptions)
-
-
-def _table_from_rows(rows):
-    if len(rows) < 2:
-        return None
-
-    headers = rows[0]
-    data_rows = rows[1:]
-
-    return {
-        "table_summary": _build_table_description(headers, data_rows)
-    }
-
-
-def _extract_vertical_tables(lines):
-    tables = []
-    index = 0
-
-    while index < len(lines):
-        headers = []
-        start_index = index
-        while index < len(lines):
-            normalized = lines[index].rstrip(":").lower()
-            if normalized not in TABLE_HEADER_LABELS:
-                break
-            headers.append(lines[index].rstrip(":"))
-            index += 1
-
-        if len(headers) < 2:
-            index = start_index + 1
-            continue
-
-        values = []
-        while index < len(lines):
-            normalized = lines[index].rstrip(":").lower()
-            if normalized in SECTION_HEADERS or normalized in TABLE_HEADER_LABELS:
-                break
-            values.append(lines[index])
-            index += 1
-
-        rows = []
-        for value_index in range(0, len(values), len(headers)):
-            row = values[value_index: value_index + len(headers)]
-            if len(row) == len(headers):
-                rows.append(row)
-
-        if rows:
-            tables.append(
-                {
-                    "table_summary": _build_table_description(headers, rows)
-                }
-            )
-
-    return tables
-
-
-def _extract_tables(lines):
-    tables = []
-    row_table = _table_from_rows(_extract_table_like_rows(lines))
-    if row_table:
-        tables.append(row_table)
-    tables.extend(_extract_vertical_tables(lines))
-    return tables
-
-
-def _extract_general_details(text):
-    lines = _lines(text)
-    emails = _unique(EMAIL_PATTERN.findall(text))
-    phones = _extract_phone_numbers(text)
-    dates = _unique(match.group(0) for match in DATE_PATTERN.finditer(text))
-    money_values = _unique(match.group(0) for match in MONEY_PATTERN.finditer(text))
-
-    # Capture structural academic percentages safely
-    percentages = _unique(match.group(0) for match in PERCENT_PATTERN.finditer(text))
-
-    doc_type = _detect_document_type(text)
-
-    has_tables = doc_type in {"Receipt", "Invoice", "Purchase Order"}
-    table_rows = _extract_table_like_rows(lines) if has_tables else []
-    extracted_tables = _extract_tables(lines) if has_tables else []
-
-    return {
-        "document_type": doc_type,
-        "title": _extract_title(lines),
-        "key_value_fields": _extract_key_value_fields(lines),
-        "identifiers": _extract_identifiers(lines),
-        "contacts": _extract_contact_blocks(lines),
-        "emails": emails,
-        "phone_numbers": phones,
-        "dates": dates,
-        "monetary_values": money_values,
-        "percentages": percentages,  # Assigned safely to dataset maps
-        "sections": _extract_sections(lines),
-        "table_like_rows": table_rows,
-        "tables": extracted_tables,
-    }
-
-
-def _company_section(lines):
-    payment_index = _find_label_index(lines, ["Payment method", "Payment mode", "Vendor", "Vendor Code"])
-    bill_to_index = _find_label_index(lines, ["Bill To", "Billed To", "Customer", "Ship To"])
-    if payment_index == -1 or bill_to_index == -1 or payment_index >= bill_to_index:
-        return []
-
-    return lines[payment_index + 2: bill_to_index]
-
-
-def _extract_items(lines):
-    item_index = _find_label_index(lines, ["Item", "Description", "Particulars"])
-    subtotal_index = _find_label_index(lines, ["Subtotal", "Sub Total", "Total"])
-    if item_index == -1:
-        return []
-
-    end_index = subtotal_index if subtotal_index != -1 else len(lines)
-    item_lines = lines[item_index + 1: end_index]
-
-    header_words = {"unit cost", "unit price", "quantity", "qty", "amount", "price", "rate", "item"}
-
-    cleaned_values = []
-    for line in item_lines:
-        cleaned = line.replace('"', '').replace('\\$', '$').strip()
-        cleaned = re.sub(r'^,+|,+$', '', cleaned).strip()
-
-        if not cleaned or cleaned == "$" or cleaned.lower() in header_words:
-            continue
-        cleaned_values.append(cleaned)
-
-    if len(cleaned_values) >= 5 and not cleaned_values[1].isdigit():
-        cleaned_values[0] = f"{cleaned_values[0]}, {cleaned_values[1]}"
-        del cleaned_values[1]
-
-    items = []
-    for index in range(0, len(cleaned_values), 4):
-        row = cleaned_values[index: index + 4]
-        if len(row) < 4:
-            continue
-        items.append(
-            {
-                "description": row[0] if len(row) > 0 else "Unknown Item",
-                "quantity": row[1] if len(row) > 1 else "0",
-                "unit_cost": row[2] if len(row) > 2 else "0.00",
-                "amount": row[3] if len(row) > 3 else "0.00",
-            }
-        )
-
-    return items
-
-
-def _extract_financial_details(text):
-    lines = _lines(text)
-    bill_to_section = _section(
-        lines,
-        ["Bill To", "Billed To", "Customer", "Vendor"],
-        ["Item", "Description", "Particulars", "Subtotal", "Sub Total", "Total"],
+    # ✅ FIXED: Global (?i) flag positioned at the absolute start of the expression sequence
+    pointer_pattern = re.compile(
+        r'(?i)^\d+[\s.)-]|^\b[A-Za-z][.)]\s|^•|^\*|^-|'
+        r'^(phone|tel|email|date|invoice\s?#|p\.o\.\s?number|total\s?due|terms|ship\s?to|to:)'
     )
 
-    refunded_date = None
-    refunded_amount = None
-    for index, line in enumerate(lines):
-        if "refunded" in line.lower():
-            refunded_date = line
-            if index + 1 < len(lines):
-                refunded_amount = MONEY_PATTERN.search(lines[index + 1])
-                refunded_amount = refunded_amount.group(0) if refunded_amount else None
-            break
-
-    date_paid = _value_after_label(lines, ["Date paid", "Payment date"])
-    if not date_paid:
-        date_paid = _value_after_label(lines, ["Date:"])
-
-    return {
-        "company": _contact_details(_company_section(lines)),
-        "customer": _contact_details(bill_to_section),
-        "receipt_number": _value_after_label(lines, ["Receipt Number", "Receipt No", "Receipt #"]),
-        "invoice_number": _value_after_label(lines,
-                                             ["Invoice Number", "Invoice No", "Invoice #", "PO Number", "PO No"]),
-        "date_paid": date_paid,
-        "due_date": _value_after_label(lines, ["Due Date", "Payment Due", "Delivery Date"]),
-        "payment_method": _value_after_label(lines, ["Payment method", "Payment mode", "Terms of Delivery"]),
-        "items": _extract_items(lines),
-        "subtotal": _money_after_label(lines, ["Subtotal", "Sub Total"]),
-        "tax": _money_after_label(lines, ["Tax", "GST", "VAT"]),
-        "total": _money_after_label(lines, ["Total", "Grand Total", "Total Amount"]),
-        "amount_paid": _money_after_label(lines, ["Amount paid", "Paid Amount"]),
-        "balance_due": _money_after_label(lines, ["Balance Due", "Amount Due"]),
-        "refund": {
-            "date_or_note": refunded_date,
-            "amount": refunded_amount,
-        },
-    }
-
-
-def _has_value(value):
-    if value is None:
-        return False
-    if isinstance(value, str):
-        return bool(value.strip()) and value != "Not found"
-    if isinstance(value, (list, dict)):
-        return bool(value)
-    return True
-
-
-def _add_if_present(target, key, value):
-    if _has_value(value):
-        target[key] = value
-
-
-def _important_contact(contact):
-    important = {}
-    _add_if_present(important, "name", contact.get("name"))
-    _add_if_present(important, "address", contact.get("address"))
-    _add_if_present(important, "phone", contact.get("phone"))
-    _add_if_present(important, "email", contact.get("email"))
-    _add_if_present(important, "other_details", contact.get("other_details"))
-    return important
-
-
-def _important_financial_details(financial):
-    important = {}
-    _add_if_present(important, "company", _important_contact(financial["company"]))
-    _add_if_present(important, "customer", _important_contact(financial["customer"]))
-
-    for key in [
-        "receipt_number", "invoice_number", "date_paid", "due_date",
-        "payment_method", "subtotal", "tax", "total", "amount_paid", "balance_due",
-    ]:
-        _add_if_present(important, key, financial.get(key))
-
-    refund = financial.get("refund", {})
-    important_refund = {}
-    _add_if_present(important_refund, "date_or_note", refund.get("date_or_note"))
-    _add_if_present(important_refund, "amount", refund.get("amount"))
-    _add_if_present(important, "refund", important_refund)
-    _add_if_present(important, "items", financial.get("items"))
-    return important
-
-
-def _tables_from_items(items):
-    if not items:
-        return []
-
-    headers = ["description", "unit_cost", "quantity", "amount"]
-    rows = []
-    for item in items:
-        rows.append([item.get(header, "") for header in headers])
-
-    return [
-        {
-            "table_summary": _build_table_description(headers, rows)
-        }
-    ]
-
-
-def _format_section_preview(content):
-    if any(line.strip().startswith("•") or len(line) > 55 or "github.com" in line.lower() for line in content):
-        return content
-
-    if len(content) < 6:
-        return content
-
-    headers = []
-    data_start = 0
-    for index, line in enumerate(content):
-        line = line.strip()
-        if re.search(r"\d{4}", line) or "%" in line or "(" in line:
-            data_start = index
-            break
-        headers.append(line)
-
-    if len(headers) < 2:
-        return content
-
-    merged_headers = []
-    skip = False
-    for i in range(len(headers)):
-        if skip:
-            skip = False
+    for line in lines:
+        normalized_line = _normalize_line(line)
+        if not normalized_line:
             continue
-        current = headers[i]
-        if i + 1 < len(headers) and len(current) <= 15:
-            merged_headers.append(current + " " + headers[i + 1])
-            skip = True
+
+        upper_line = normalized_line.upper()
+        is_dynamic_header = False
+
+        for keywords in DOCUMENT_CLASSIFIER_MAP.values():
+            if any(kw.upper() == upper_line for kw in keywords) and len(upper_line) < 40:
+                is_dynamic_header = True
+                break
+
+        if not is_dynamic_header and line.isupper() and len(line.split()) <= 4 and len(line) < 30 and line.isalpha():
+            is_dynamic_header = True
+
+        if is_dynamic_header:
+            if current_text_buffer:
+                unique_buffer = []
+                for item in current_text_buffer:
+                    if item not in unique_buffer:
+                        unique_buffer.append(item)
+
+                sections.append({
+                    "heading": current_heading,
+                    "description": unique_buffer if len(unique_buffer) > 1 else (
+                        unique_buffer[0] if unique_buffer else "No descriptive records found.")
+                })
+            current_heading = upper_line
+            current_text_buffer = []
         else:
-            merged_headers.append(current)
+            if pointer_pattern.match(normalized_line):
+                current_text_buffer.append(normalized_line)
+            else:
+                if current_text_buffer and not pointer_pattern.match(str(current_text_buffer[-1])):
+                    current_text_buffer[-1] = f"{current_text_buffer[-1]} {normalized_line}"
+                else:
+                    current_text_buffer.append(normalized_line)
 
-    headers = merged_headers
-    values = content[data_start:]
-    row_size = len(headers)
-    formatted = []
+    if current_text_buffer or current_heading != "GENERAL OVERVIEW":
+        unique_buffer = []
+        for item in current_text_buffer:
+            if item not in unique_buffer:
+                unique_buffer.append(item)
 
-    for i in range(0, len(values), row_size):
-        row = values[i: i + row_size]
-        if len(row) != row_size:
-            continue
-        arrow_row = []
-        for h, v in zip(headers, row):
-            arrow_row.append(f"{h} -> {v}")
-        formatted.append(" | ".join(arrow_row))
+        sections.append({
+            "heading": current_heading,
+            "description": unique_buffer if len(unique_buffer) > 1 else (
+                unique_buffer[0] if unique_buffer else "No descriptive records found.")
+        })
 
-    return formatted if formatted else content
-
-
-def _important_sections(sections):
-    result = []
-    for section in sections:
-        content = [line.strip() for line in section.get("content", []) if line.strip()]
-        if not content:
-            continue
-        result.append(
-            {"heading": section["heading"], "content": _format_section_preview(content)}
-        )
-    return result
+    return sections
 
 
-def _important_details(details):
-    important = {}
-    _add_if_present(important, "title", details.get("title"))
+def format_response(filename: str, text: str, search_keyword: Optional[str] = None) -> Dict[str, Any]:
+    """Universal gatekeeper parsing extracted strings into organized JSON graphs,
 
-    if details.get("financial_details"):
-        financial_details = _important_financial_details(details["financial_details"])
-        for key, value in financial_details.items():
-            _add_if_present(important, key, value)
-        _add_if_present(important, "tables", _tables_from_items(details["financial_details"]["items"]))
-        return important
+    featuring inline global entity registries, a custom keyword proximity searcher,
+    and fallback formatters protecting international phone signatures.
+    """
+    repaired_text = universal_de_space_text(text)
+    flat_upper = repaired_text.upper()
+    processed_lines = universal_split_lines(text)
 
-    identifiers = {key: value for key, value in details["identifiers"].items() if _has_value(value)}
-    _add_if_present(important, "identifiers", identifiers)
-    _add_if_present(important, "dates", details["dates"])
-    _add_if_present(important, "emails", details["emails"])
-    _add_if_present(important, "phone_numbers", details["phone_numbers"])
-    _add_if_present(important, "monetary_amounts", details["monetary_values"])
-    _add_if_present(important, "percentages_detected", details["percentages"])  # Preserves percentage tracking cleanly
-    _add_if_present(important, "contacts", details["contacts"])
+    scores = {dtype: 0 for dtype in DOCUMENT_CLASSIFIER_MAP.keys()}
+    for dtype, keywords in DOCUMENT_CLASSIFIER_MAP.items():
+        scores[dtype] = sum(2 if kw.upper() in flat_upper else 0 for kw in keywords)
 
-    if details.get("tables") and len(details["tables"]) > 0:
-        _add_if_present(important, "tables", details["tables"])
+    lower_fn = filename.lower()
+    if "resume" in lower_fn or "cv" in lower_fn:
+        scores["Resume"] += 10
+    elif "calendar" in lower_fn or "schedule" in lower_fn:
+        scores["Calendar"] += 10
+    elif "invoice" in lower_fn:
+        scores["Invoice"] += 10
+    elif "receipt" in lower_fn:
+        scores["Receipt"] += 10
+    elif any(x in lower_fn for x in ["marksheet", "certificate", "transcript"]):
+        scores["Certificate"] += 10
 
-    _add_if_present(important, "sections", _important_sections(details["sections"]))
+    inferred_doc_type = max(scores, key=scores.get) if max(scores.values(), default=0) > 0 else "General Document"
 
-    return important
+    structured_sections = parse_generic_sections(processed_lines)
 
+    emails = _unique(EMAIL_PATTERN.findall(repaired_text))
+    percentages = _unique([m.group(0).strip() for m in PERCENT_PATTERN.finditer(repaired_text)])
 
-def _search_keyword_in_text(text, keyword):
-    if not keyword:
-        return []
+    raw_phones = _unique([m.group(0).strip() for m in PHONE_PATTERN.finditer(repaired_text)])
 
-    matches = []
-    lowered_keyword = keyword.lower()
+    phones = []
+    for p in raw_phones:
+        if p.startswith("+"):
+            phones.append(p)
+        else:
+            if re.match(r'^\d{1,3}(?:\s|[\s.-]?\()', p) or re.match(r'^\d{1,3}\s', p):
+                phones.append(f"+{p}")
+            else:
+                if len(p.replace(" ", "").replace("-", "")) >= 11:
+                    phones.append(f"+{p}")
+                else:
+                    phones.append(p)
 
-    for line in text.splitlines():
-        if lowered_keyword in line.lower():
-            matches.append(line.strip())
+    search_matches = []
+    if search_keyword and search_keyword.strip():
+        clean_keyword = search_keyword.strip()
+        keyword_regex = re.compile(rf'(?i)\b{re.escape(clean_keyword)}\b')
 
-    return _unique(matches)
+        for line in processed_lines:
+            if keyword_regex.search(line):
+                search_matches.append(_normalize_line(line))
 
-
-def format_response(filename, text, search_keyword=None):
-    details = _extract_general_details(text)
-
-    if details["document_type"] in {"Receipt", "Invoice", "Purchase Order"}:
-        details["financial_details"] = _extract_financial_details(text)
-
-    important_details = _important_details(details)
-    keyword_matches = _search_keyword_in_text(text, search_keyword)
-
-    # FIXED: Restored your exact target payload keys (`document_type`, `extracted_data`, etc.)
     return _remove_null_values({
         "filename": filename,
-        "document_type": details["document_type"],
-        "keyword_search_target": search_keyword if search_keyword else "None Provided",
-        "keyword_search_matches": keyword_matches if keyword_matches else "No matches found",
-        "extracted_data": important_details
+        "document_type": inferred_doc_type,
+        "extracted_data": {
+            "emails": emails if emails else "None Found",
+            "phone_numbers": phones if phones else "None Found",
+            "percentages_detected": percentages if percentages else "None Found",
+            "keyword_search": {
+                "query_term": search_keyword if search_keyword else "No query provided",
+                "match_count": len(search_matches),
+                "matches_found": search_matches if search_matches else "No keyword matches located inside document."
+            },
+            "sections": structured_sections
+        }
     })

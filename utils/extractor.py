@@ -1,27 +1,26 @@
-try:
-    import pymupdf as fitz
-except ImportError:
-    import fitz
+import os
+from pypdf import PdfReader
 
+TESSERACT_EXE_PATH = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+if os.path.exists(TESSERACT_EXE_PATH):
+    import pytesseract
+    pytesseract.pytesseract.tesseract_cmd = TESSERACT_EXE_PATH
 
-def extract_text_from_pdf(pdf_path: str) -> str:
-    """Extracts layout text blocks cleanly from a digital PDF layer."""
+def extract_text_from_pdf(file_path: str) -> str:
+    text = ""
     try:
-        with fitz.open(pdf_path) as document:
-            if document.page_count == 0:
-                raise ValueError("The PDF does not contain any pages.")
+        reader = PdfReader(file_path)
+        text = "\n".join([page.extract_text() for page in reader.pages if page.extract_text()])
+    except Exception as e:
+        print(f"[Extractor Layer] Structural read failed: {e}")
 
-            page_text = []
-            for page in document:
-                # Extracts raw sequential layout streams natively
-                text = page.get_text("text")
-                page_text.append(text)
+    if not text.strip():
+        print(f"[Extractor Layer] Scanned document profile detected. Initializing OCR matrix...", flush=True)
+        try:
+            from utils.ocr import extract_text_with_ocr
+            text = extract_text_with_ocr(file_path)
+        except Exception as ocr_err:
+            print(f"[Critical Extractor Failure] Local OCR chain halted: {ocr_err}")
+            text = ""
 
-            return "\n".join(page_text)
-
-    except ValueError:
-        raise
-    except fitz.FileDataError as error:
-        raise ValueError("The uploaded file is not a valid PDF.") from error
-    except Exception as error:
-        raise RuntimeError(f"PDF extraction failed: {error}") from error
+    return text

@@ -2,276 +2,447 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Core Document Intelligence</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=2.0">
+    <title>PDF Extraction API</title>
     <style>
+        :root {
+            --bg-dark: #0A0D10;
+            --panel-bg: #12161A;
+            --border-color: #232D35;
+            --accent-glow: #00E5FF;
+            --text-main: #E2E8F0;
+            --text-muted: #64748B;
+            --matrix-green: #58ff5b;
+        }
+
         body {
-            font-family: monospace;
+            background-color: var(--bg-dark);
+            color: var(--text-main);
+            font-family: Montserrat, Poppins, "Segoe UI", Arial, sans-serif;
+            margin: 0; padding: 20px;
+            display: flex; flex-direction: column; align-items: center;
+        }
+
+        /* --- Container Viewports --- */
+        .container {
+            width: 100%;
+            max-width: 1024px;
+            margin: 2rem auto;
+            padding: 0 1.5rem;
+            display: flex;
+            flex-direction: column;
+            gap: 2rem;
+        }
+
+        /* --- Navigation Header Section --- */
+        .header-panel {
+            border: 1px solid var(--border-color);
+            background-color: var(--panel-bg);
+            padding: 1.5rem 1.75rem;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 0.5rem;
+        }
+
+        .header-panel h1 {
+            margin: 0;
+            font-size: 1.25rem;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 0.15em;
+            color: var(--text-main);
+            line-height: 1.2;
+        }
+
+        .subtitle {
+            font-size: 0.7rem;
+            font-weight: 500;
+            color: var(--text-muted);
+            text-transform: capitalize;
+            letter-spacing: 0.05em;
+            margin: 0;
+        }
+
+        /* --- Segmented Metrics Display Grid --- */
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 1rem;
+        }
+
+        .metric-box {
+            background-color: var(--panel-bg);
+            border: 1px solid var(--border-color);
+            padding: 1.25rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .metric-label {
+            font-size: 0.65rem;
+            font-weight: 700;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+        }
+
+        .metric-value {
+            font-size: 0.9rem;
+            font-weight: 700;
+            color: var(--accent-glow);
+            word-break: break-all;
+        }
+
+        .metric-box:last-child .metric-value {
+            color: var(--matrix-green);
+        }
+
+        /* --- TWO-COLUMN SEGMENTED WORKSPACE GRID --- */
+        .workspace-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1.5rem;
+            width: 100%;
+        }
+
+        /* --- Left Side Upload Dropzone Panel --- */
+        .upload-section {
+            background-color: var(--panel-bg);
+            border: 1px dashed var(--border-color);
+            padding: 2.5rem 1.5rem;
+            text-align: center;
+            cursor: pointer;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            min-height: 240px;
+            box-sizing: border-box;
+            transition: border-color 0.15s ease, background-color 0.15s ease;
+        }
+
+        .upload-section.dragover {
+            border-color: var(--accent-glow);
+            background-color: #161B22;
+        }
+
+        /* --- Right Side Control Actions Panel --- */
+        .controls-section {
+            background-color: var(--panel-bg);
+            border: 1px solid var(--border-color);
+            padding: 2.5rem 2rem;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            min-height: 240px;
+            box-sizing: border-box;
+        }
+
+        /* --- Minimal Structural Action Buttons --- */
+        .btn {
+            display: block;
+            width: 100%;
+            background-color: #1F262D;
+            color: var(--text-main);
+            border: 1px solid var(--border-color);
+            padding: 0.85rem 1.5rem;
+            font-family: inherit;
+            font-size: 0.75rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            box-sizing: border-box;
+        }
+
+        .btn:hover:not(:disabled) {
+            background-color: var(--accent-glow);
+            color: var(--bg-dark);
+            border-color: var(--accent-glow);
+            box-shadow: 0 0 15px rgba(0, 229, 255, 0.3);
+        }
+
+        .btn:disabled {
+            background-color: #0D1115;
+            border-color: #1A2126;
+            color: #3A4655;
+            cursor: not-allowed;
+        }
+
+        #extractBtn {
+            background-color: #171E25;
+            border-color: var(--border-color);
+            margin-top: auto;
+        }
+
+        #extractBtn:hover:not(:disabled) {
+            background-color: var(--matrix-green);
+            color: var(--bg-dark);
+            border-color: var(--matrix-green);
+            box-shadow: 0 0 15px rgba(0, 255, 102, 0.3);
+        }
+
+        /* --- Keyword Search Sub-section Input Panel --- */
+        .search-wrapper {
+            margin-bottom: 1.5rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            text-align: left;
+        }
+
+        .search-label {
+            font-size: 0.65rem;
+            font-weight: 700;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+        }
+
+        .search-input {
+            width: 100%;
+            box-sizing: border-box;
+            background-color: #0A0D10;
+            border: 1px solid var(--border-color);
+            padding: 0.75rem 1rem;
+            font-family: inherit;
+            font-size: 0.8rem;
+            color: var(--text-main);
+            transition: border-color 0.2s ease;
+        }
+
+        .search-input:focus {
+            outline: none;
+            border-color: var(--accent-glow);
+            box-shadow: 0 0 8px rgba(0, 229, 255, 0.1);
+        }
+
+        /* --- JSON Syntax Code Terminal Viewer --- */
+        .json-display {
+            background-color: #050709;
+            border: 1px solid var(--border-color);
+            padding: 1.25rem;
+            overflow-x: auto;
+            font-family: 'JetBrains Mono', 'Fira Code', monospace;
+            font-size: 0.75rem;
+            line-height: 1.6;
+            max-height: 480px;
+            white-space: pre-wrap;
+            color: #ffffff; /* Default color for punctuation / braces */
+        }
+
+        .json-key {
+            color: var(--text-main);
+            font-weight: 600;
+        }
+
+        .json-string {
+            color: var(--accent-glow);
+        }
+
+        .json-number {
+            color: var(--accent-glow);
+        }
+
+        .json-boolean {
+            color: #FF79C6;
+        }
+
+        /* --- Dynamic Status/Loader Line --- */
+        .loader {
+            display: none;
+            font-size: 0.7rem;
+            color: var(--matrix-green);
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            margin-top: 12px;
+            animation: pulse 1.5s infinite ease-in-out;
+        }
+
+        @keyframes pulse {
+            0% { opacity: 0.6; }
+            50% { opacity: 1; }
+            100% { opacity: 0.6; }
         }
     </style>
 </head>
-<body class="bg-slate-950 text-slate-100 min-h-screen p-6 max-w-3xl mx-auto flex flex-col gap-6">
-
-    <div class="text-center">
-        <p class="text-slate-500">----------------------------------------------------------------------------------------------------</p>
-        <h1 class="text-lg font-bold tracking-widest uppercase py-1 text-indigo-400">CORE DOCUMENT INTELLIGENCE</h1>
-        <p class="text-slate-500">----------------------------------------------------------------------------------------------------</p>
-    </div>
-
-    <!-- Upload Controls -->
-    <div class="flex flex-col items-center gap-4">
-        <input type="file" id="fileInput" class="hidden" accept=".pdf,.png,.jpg,.jpeg">
-
-        <div id="dropZone" class="w-full border border-slate-800 bg-slate-900/40 rounded-xl p-5 text-center cursor-pointer select-none">
-            <div class="text-sm font-bold text-slate-300">Drop PDF/image here</div>
-            <div class="text-xs text-slate-500 mt-1">or click to choose. OCR runs when native text is empty.</div>
+<body>
+    <div class="container">
+        <div class="header-panel">
+            <h1 id="docTypeHeader">PDF EXTRACTION API</h1>
+            <p class="subtitle">Upload PDF and get structured extracted output in JSON</p>
         </div>
 
-        <div class="flex flex-col sm:flex-row items-center gap-3 w-full">
-            <button id="chooseBtn" class="px-6 py-2 bg-slate-900 border border-slate-700 rounded text-sm hover:bg-slate-800 transition-colors font-bold text-slate-200">
-                [ Choose File ]
-            </button>
-
-            <div class="flex-1 text-left">
-                <p id="fileNameDisp" class="text-sm font-bold text-slate-400 italic">No document selected</p>
+        <div class="metrics-grid">
+            <div class="metric-box">
+                <div class="metric-label">Emails</div>
+                <div class="metric-value" id="emailNode">NONE</div>
+            </div>
+            <div class="metric-box">
+                <div class="metric-label">Phone Numbers</div>
+                <div class="metric-value" id="phoneNode">NONE</div>
+            </div>
+            <div class="metric-box">
+                <div class="metric-label">Document Type</div>
+                <div class="metric-value" id="classNode">Upload Pending</div>
             </div>
         </div>
 
-        <button id="processBtn" disabled class="w-full px-6 py-2 bg-indigo-950 border border-indigo-700 disabled:border-slate-800 disabled:bg-slate-900/50 text-indigo-300 disabled:text-slate-600 rounded text-sm font-bold hover:bg-indigo-900 transition-colors">
-            [ Extract Information ]
-        </button>
+        <div class="workspace-grid">
 
-        <div id="loader" class="hidden w-full flex flex-col items-center gap-2 py-2">
-            <div class="h-5 w-5 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
-            <p class="text-xs text-slate-500">Executing pipeline array sweeps...</p>
-        </div>
-
-        <div id="errorPanel" class="hidden w-full border border-red-900 bg-red-950/30 rounded-xl p-4">
-            <div class="text-xs uppercase tracking-wider font-bold text-red-300">Error</div>
-            <pre id="errorText" class="mt-2 text-xs text-red-200 whitespace-pre-wrap break-words"></pre>
-        </div>
-    </div>
-
-    <!-- Output Panel -->
-    <div id="outputPanel" class="hidden flex flex-col gap-6">
-        <div>
-            <p class="text-slate-500">----------------------------------------------------</p>
-            <h2 class="text-xs uppercase font-bold tracking-wider text-slate-400 py-1">DOCUMENT DETAILS</h2>
-            <p class="text-slate-500">----------------------------------------------------</p>
-            <div class="mt-2 pl-2">
-                <p class="text-xs text-slate-500">Document Type:</p>
-                <p id="outDocType" class="text-sm font-bold text-indigo-400 mt-0.5">Unknown</p>
+            <div class="upload-section" id="dropZone">
+                <p style="margin: 0 0 15px 0; font-size: 0.85rem; color: var(--text-main);">
+                    Drag & Drop PDF here
+                </p>
+                <p style="margin: 0 0 15px 0; font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase;">
+                    or
+                </p>
+                <input type="file" id="filePicker" style="display: none;" accept="application/pdf" />
+                <button class="btn" onclick="document.getElementById('filePicker').click()">Choose File</button>
+                <div id="fileStatus" style="margin-top: 12px; font-size: 0.75rem; color: var(--accent-glow); font-weight: 500;"></div>
+                <div class="loader" id="loadingIndicator">Processing Document...</div>
+                <div class="loader" id="loadingIndicator2">Extracting Text...</div>
             </div>
-        </div>
 
-        <div>
-            <p class="text-slate-500">----------------------------------------------------</p>
-            <h2 class="text-xs uppercase font-bold tracking-wider text-slate-400 py-1">EMAILS</h2>
-            <p class="text-slate-500">----------------------------------------------------</p>
-            <div id="outEmails" class="mt-2 pl-2 text-sm font-bold text-slate-300 flex flex-col gap-1">
-                None Found
+            <div class="controls-section">
+                <div class="search-wrapper">
+                    <label class="search-label" for="keywordInput">Target Keyword Search (Optional)</label>
+                    <input type="text" id="keywordInput" class="search-input" placeholder="e.g., Password, OTP, Invoice..." />
+                </div>
+                <button class="btn" id="extractBtn" disabled>Extract</button>
             </div>
+
         </div>
 
-        <div>
-            <p class="text-slate-500">----------------------------------------------------</p>
-            <h2 class="text-xs uppercase font-bold tracking-wider text-slate-400 py-1">PHONE NUMBERS</h2>
-            <p class="text-slate-500">----------------------------------------------------</p>
-            <div id="outPhones" class="mt-2 pl-2 text-sm font-bold text-slate-300 flex flex-col gap-1">
-                None Found
-            </div>
-        </div>
-
-        <div>
-            <p class="text-slate-500">----------------------------------------------------</p>
-            <h2 class="text-xs uppercase font-bold tracking-wider text-slate-400 py-1">PERCENTAGES</h2>
-            <p class="text-slate-500">----------------------------------------------------</p>
-            <div id="outPercentages" class="mt-2 pl-2 text-sm font-bold text-slate-300 flex flex-col gap-1">
-                None Found
-            </div>
-        </div>
-
-        <div>
-            <p class="text-slate-500">----------------------------------------------------</p>
-            <h2 class="text-xs uppercase font-bold tracking-wider text-slate-400 py-1">RAW JSON</h2>
-            <p class="text-slate-500">----------------------------------------------------</p>
-            <pre id="outJsonBlock" class="mt-2 p-3 bg-slate-900/60 border border-slate-800 rounded text-xs font-mono text-cyan-400 overflow-x-auto whitespace-pre-wrap max-h-[400px]"></pre>
-        </div>
+        <pre class="json-display" id="jsonConsole">{ "status": "Awaiting offline extraction system to initialize parameters..." }</pre>
     </div>
 
     <script>
-        const chooseBtn = document.getElementById('chooseBtn');
+        const filePicker = document.getElementById('filePicker');
+        const extractBtn = document.getElementById('extractBtn');
+        const fileStatus = document.getElementById('fileStatus');
+        const keywordInput = document.getElementById('keywordInput');
+        const loadingIndicator = document.getElementById('loadingIndicator');
+        const jsonConsole = document.getElementById('jsonConsole');
+        const emailNode = document.getElementById('emailNode');
+        const phoneNode = document.getElementById('phoneNode');
+        const classNode = document.getElementById('classNode');
+        const docTypeHeader = document.getElementById('docTypeHeader');
         const dropZone = document.getElementById('dropZone');
-        const fileInput = document.getElementById('fileInput');
-        const fileNameDisp = document.getElementById('fileNameDisp');
-        const processBtn = document.getElementById('processBtn');
-        const loader = document.getElementById('loader');
-        const outputPanel = document.getElementById('outputPanel');
-        const errorPanel = document.getElementById('errorPanel');
-        const errorText = document.getElementById('errorText');
 
-        let targetFileObject = null;
+        let selectedFile = null;
 
-        function showError(message) {
-            errorText.textContent = String(message ?? 'Unknown error');
-            errorPanel.classList.remove('hidden');
-        }
-
-        function clearError() {
-            errorPanel.classList.add('hidden');
-            errorText.textContent = '';
-        }
-
-        function normalizeEmpty(value) {
-            if (value === null || value === undefined) return null;
-            if (typeof value === 'string') {
-                const v = value.trim().toLowerCase();
-                if (!v || v === 'none found' || v === 'not found') return null;
-            }
-            if (Array.isArray(value) && value.length === 0) return null;
-            return value;
-        }
-
-        function renderListElement(elementId, datasetValues) {
-            const container = document.getElementById(elementId);
-            container.innerHTML = '';
-
-            const normalized = normalizeEmpty(datasetValues);
-            if (normalized === null) {
-                container.textContent = 'None Found';
-                return;
-            }
-
-            if (Array.isArray(normalized)) {
-                if (normalized.length === 0) {
-                    container.textContent = 'None Found';
-                    return;
+        function syntaxHighlightJson(jsonObj) {
+            let jsonStr = JSON.stringify(jsonObj, null, 4);
+            jsonStr = jsonStr.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            return jsonStr.replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+-]?\d+)?)/g, function (match) {
+                let cls = 'json-string';
+                if (/^"/.test(match)) {
+                    if (/:$/.test(match)) {
+                        cls = 'json-key';
+                    } else {
+                        cls = 'json-string';
+                    }
+                } else if (/true|false/.test(match)) {
+                    cls = 'json-boolean';
+                } else if (/null/.test(match)) {
+                    cls = 'json-boolean';
+                } else {
+                    cls = 'json-number';
                 }
-                normalized.forEach(val => {
-                    const line = document.createElement('p');
-                    line.textContent = String(val);
-                    container.appendChild(line);
-                });
-                return;
+                return `<span class="${cls}">${match}</span>`;
+            });
+        }
+
+        function handleFileSelection(file) {
+            if (file && file.type === "application/pdf") {
+                selectedFile = file;
+                fileStatus.textContent = `File Ready: ${selectedFile.name}`;
+                extractBtn.disabled = false;
+            } else {
+                alert("Invalid File Type: Please drop a valid PDF document.");
             }
-
-            // backend sometimes returns strings
-            container.textContent = String(normalized);
         }
 
-        function setJsonPayload(payload) {
-            document.getElementById('outJsonBlock').textContent = JSON.stringify(payload, null, 4);
-        }
-
-        function renderLayoutMetrics(payload) {
-            const docType = payload?.document_type || 'General Document';
-            const extracted = payload?.extracted_data || {};
-
-            document.getElementById('outDocType').textContent =
-                docType.charAt(0).toUpperCase() + docType.slice(1);
-
-            renderListElement('outEmails', extracted.emails);
-            renderListElement('outPhones', extracted.phone_numbers);
-
-            // Backend key is percentages_detected, but keep compatibility with any other key
-            const percentages =
-                extracted.percentages_detected ??
-                extracted.percentages ??
-                extracted.percentages_detected_list ??
-                null;
-            renderListElement('outPercentages', percentages);
-
-            setJsonPayload(payload);
-            outputPanel.classList.remove('hidden');
-        }
-
-        function setLoading(isLoading) {
-            loader.classList.toggle('hidden', !isLoading);
-            processBtn.disabled = isLoading || !targetFileObject;
-            outputPanel.classList.toggle('hidden', isLoading);
-        }
-
-        function setSelectedFile(file) {
-            targetFileObject = file;
-            fileNameDisp.textContent = file ? file.name : 'No document selected';
-            clearError();
-            processBtn.disabled = !file;
-            outputPanel.classList.add('hidden');
-        }
-
-        // click to choose
-        chooseBtn.addEventListener('click', () => fileInput.click());
-
-        // file selection
-        fileInput.addEventListener('change', (event) => {
-            const file = event.target.files?.[0];
-            if (!file) return;
-            setSelectedFile(file);
+        filePicker.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                handleFileSelection(e.target.files[0]);
+            }
         });
 
-        // drag/drop
-        const highlight = () => dropZone.classList.add('ring-2', 'ring-indigo-500');
-        const unhighlight = () => dropZone.classList.remove('ring-2', 'ring-indigo-500');
+        // Drag & Drop Window Core Observers
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.classList.add('dragover');
+        });
 
-        dropZone.addEventListener('click', () => fileInput.click());
+        dropZone.addEventListener('dragleave', () => {
+            dropZone.classList.remove('dragover');
+        });
 
-        dropZone.addEventListener('dragenter', (e) => { e.preventDefault(); highlight(); });
-        dropZone.addEventListener('dragover', (e) => { e.preventDefault(); highlight(); });
-        dropZone.addEventListener('dragleave', (e) => { e.preventDefault(); unhighlight(); });
         dropZone.addEventListener('drop', (e) => {
             e.preventDefault();
-            unhighlight();
-
-            const file = e.dataTransfer?.files?.[0];
-            if (!file) return;
-            setSelectedFile(file);
-        });
-
-        // process pipeline
-        processBtn.addEventListener('click', async () => {
-            if (!targetFileObject) return;
-            clearError();
-            setLoading(true);
-
-            try {
-                const rawBufferBytes = await targetFileObject.arrayBuffer();
-
-                const response = await fetch('http://127.0.0.1:8000/upload/raw-bytes', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/octet-stream' },
-                    body: rawBufferBytes
-                });
-
-                let jsonPayload;
-                try {
-                    jsonPayload = await response.json();
-                } catch {
-                    const text = await response.text().catch(() => '');
-                    throw new Error(`Server did not return JSON. HTTP ${response.status}${text ? `: ${text}` : ''}`);
-                }
-
-                if (!response.ok) {
-                    const detail = jsonPayload?.detail || jsonPayload?.message || response.statusText;
-                    throw new Error(`Extraction failed (HTTP ${response.status}): ${detail}`);
-                }
-
-                renderLayoutMetrics(jsonPayload);
-
-            } catch (err) {
-                console.error('[Ingestion Dashboard Error Log]', err);
-                showError(err?.message || String(err));
-            } finally {
-                setLoading(false);
+            dropZone.classList.remove('dragover');
+            if (e.dataTransfer.files.length > 0) {
+                handleFileSelection(e.dataTransfer.files[0]);
             }
         });
 
-        // initial defaults
-        renderListElement('outEmails', null);
-        renderListElement('outPhones', null);
-        renderListElement('outPercentages', null);
-        setJsonPayload({ info: 'Upload a document to extract information.' });
+        extractBtn.addEventListener('click', async () => {
+            if (!selectedFile) return;
+
+            loadingIndicator.style.display = 'block';
+            extractBtn.disabled = true;
+            jsonConsole.textContent = "Extracting text and important details from the PDF. This may take a moment...";
+
+            const formPayload = new FormData();
+            formPayload.append("file", selectedFile);
+
+            const searchKeywordValue = keywordInput.value.trim();
+            if (searchKeywordValue) {
+                formPayload.append("keyword", searchKeywordValue);
+            }
+
+            try {
+                const response = await fetch("http://127.0.0.1:8000/upload", {
+                    method: "POST",
+                    body: formPayload
+                });
+
+                if (!response.ok) {
+                    const err = await response.json();
+                    throw new Error(err.detail || `HTTP_ERROR_${response.status}`);
+                }
+
+                const data = await response.json();
+
+                jsonConsole.innerHTML = syntaxHighlightJson(data);
+
+                if (data.document_type) {
+                    classNode.textContent = data.document_type.toUpperCase();
+                    docTypeHeader.textContent = `PDF EXTRACTION API (TYPE: ${data.document_type.toUpperCase()})`;
+                }
+
+                const registry = data.extracted_data || {};
+                const emails = registry.emails || [];
+                emailNode.textContent = (emails.length > 0 && emails !== "None Found") ? (Array.isArray(emails) ? emails.join(", ") : emails) : "NONE_FOUND";
+
+                const phones = registry.phone_numbers || [];
+                phoneNode.textContent = (phones.length > 0 && phones !== "None Found") ? (Array.isArray(phones) ? phones.join(", ") : phones) : "NONE_FOUND";
+
+            } catch (error) {
+                alert(`Error occurred:\n${error.message}`);
+                jsonConsole.textContent = JSON.stringify({ "error": error.message }, null, 4);
+                classNode.textContent = "ERROR OCCURRED";
+            } finally {
+                loadingIndicator.style.display = 'none';
+                extractBtn.disabled = false;
+            }
+        });
     </script>
 </body>
 </html>
-
