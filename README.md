@@ -18,17 +18,19 @@ for scanned PDFs, and returning a structured JSON response.
 ```text
 project_root/
 |-- main.py
+|-- index.html
+|-- Dockerfile
+|-- docker-compose.yml
+|-- .dockerignore
 |-- requirements.txt
 |-- README.md
 |-- uploads/
-|-- utils/
-|   |-- __init__.py
-|   |-- extractor.py
-|   |-- ocr.py
-|   |-- parser.py
-|   `-- formatter.py
-`-- tests/
-```
+`-- utils/
+    |-- __init__.py
+    |-- extractor.py
+    |-- ocr.py
+    |-- parser.py
+    `-- formatter.py
 
 ## Setup
 
@@ -40,7 +42,7 @@ pip install -r requirements.txt
 
 OCR also requires system tools:
 
-- Install Tesseract OCR and make sure `tesseract` is available in `PATH`.
+- Install Tesseract OCR and make sure `tesseract` is available in `PA       TH`.
 - Install Poppler and make sure its `bin` directory is available in `PATH`.
 
 On Windows, if OCR fails, check that both tools can be run from a terminal.
@@ -58,10 +60,34 @@ Open Swagger UI:
 http://127.0.0.1:8000/docs
 ```
 
+## Docker Setup (Alternative Containerized Workflow)
+This entire application infrastructure can also be executed inside isolated virtual environments using Docker Desktop. When running via Docker, you do not need to manually install Python, Tesseract OCR, or Poppler binaries locally on your host Windows operating system.
+
+## Prerequisites
+Ensure you have downloaded and installed Docker Desktop (configured with the WSL 2 backend engine) running on your standard 64-bit AMD64/x86_64 host machine.
+
+## Execution
+Open your project terminal console window workspace.
+Initialize and deploy the automated background service network container stack by executing:
+
+```bash
+docker compose up --build -d
+```
+Confirm that your service container nodes are online and running cleanly:
+
+```bash
+docker compose ps
+```
+
+## Application Network Architecture (Docker)
+Once compilation cycles wrap up successfully, you can instantly interact with the production endpoints using these local host network connections:
+
+Web UI Dashboard (Nginx Server): http://localhost:8080
+
+Interactive Backend API Docs (FastAPI Swagger UI): http://localhost:8000/docs
+
 ## API
-
 ### `GET /`
-
 Returns:
 
 ```json
@@ -71,65 +97,27 @@ Returns:
 ```
 
 ### `POST /upload`
-
 Send `multipart/form-data` with field name `file`.
 
-Example response:
 
-```json
-{
-  "filename": "sample.pdf",
-  "document_type": "Receipt",
-  "important_details_heading": "Important Details",
-  "important_details": {
-    "title": "Receipt",
-    "receipt_number": "123",
-    "date_paid": "March 25, 2024",
-    "payment_method": "ACH",
-    "total": "$20.12",
-    "tables": [
-      {
-        "headers": ["description", "unit_cost", "quantity", "amount"],
-        "rows": [
-          ["Subscription", "$19.00", "1", "$19.00"]
-        ],
-        "arrow_rows": [
-          "description -> Subscription | unit_cost -> $19.00 | quantity -> 1 | amount -> $19.00"
-        ]
-      }
-    ]
-  },
-  "document_preview_heading": "Document Preview",
-  "document_preview": "Title: Receipt. Receipt Number: 123. Date Paid: March 25, 2024. Total: $20.12. Tables: Headers: description; unit_cost; quantity; amount, Rows: Subscription; $19.00; 1; $19.00, Arrow Rows: description -> Subscription | unit_cost -> $19.00 | quantity -> 1 | amount -> $19.00"
+  "message": "Backend is running"
 }
+### `POST /upload`
+Send `multipart/form-data` with field name `file`.
+
+Operations and Pipeline Maintenance (Docker)
+Live Tracking Logs
+To inspect real-time console prints, image pre-processing warnings, or metadata file generation events inside your core API machine layer:
+
+```bash
+docker compose logs -f api-backend
 ```
 
-For non-receipt PDFs with tables, the same table structure is returned:
+## Shutting Down Services
+To spin down your container clusters, clear local network allocations, and free up system memory when your working session wraps up:
 
-```json
-{
-  "filename": "report.pdf",
-  "document_type": "Report",
-  "important_details_heading": "Important Details",
-  "important_details": {
-    "title": "Sales Report",
-    "tables": [
-      {
-        "headers": ["Item", "Quantity", "Amount"],
-        "rows": [
-          ["Pen", "3", "6"],
-          ["Book", "2", "10"]
-        ],
-        "arrow_rows": [
-          "Item -> Pen | Quantity -> 3 | Amount -> 6",
-          "Item -> Book | Quantity -> 2 | Amount -> 10"
-        ]
-      }
-    ]
-  },
-  "document_preview_heading": "Document Preview",
-  "document_preview": "Title: Sales Report. Tables: Headers: Item; Quantity; Amount, Rows: Pen; 3; 6; Book; 2; 10, Arrow Rows: Item -> Pen | Quantity -> 3 | Amount -> 6; Item -> Book | Quantity -> 2 | Amount -> 10"
-}
+```bash
+docker compose down
 ```
 
 ## Notes
